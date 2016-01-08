@@ -2,36 +2,14 @@
 Tests for the FeedbackXBlock.
 '''
 
-import json
-import sys
-
 from openedx.tests.xblock_integration.xblock_testcase import XBlockTestCase
 import mock
 
-
-class PatchRandomMixin(object):
-    """
-    This is a class which will patch random.uniform so that we can
-    confirm whether randomization works.
-    """
-    def setUp(self):
-        super(PatchRandomMixin, self).setUp()
-        self.random_patch_value = None
-
-        def patched_uniform(min, max):
-            return self.random_patch_value
-
-        patcher = mock.patch("random.uniform",
-                             patched_uniform)
-        patcher.start()
-        self.addCleanup(patcher.stop)
-
-    def set_random(self, random_patch_value):
-        self.random_patch_value = random_patch_value
+import feedback.feedback
 
 
 # pylint: disable=abstract-method
-class TestFeedback(PatchRandomMixin, XBlockTestCase):
+class TestFeedback(XBlockTestCase):
     """
     Basic tests for the FeedbackXBlock. We set up a page with two
     of the block, make sure the page renders, toggle a few ratings,
@@ -101,10 +79,10 @@ class TestFeedback(PatchRandomMixin, XBlockTestCase):
         is correct.
         """
         self.select_student(0)
+        self.set_random(45)
         # We confirm we don't have errors rendering the student view
         self.check_response('feedback_0', True)
         # At 45, feedback_1 should render
-        self.set_random(45)
         self.check_response('feedback_1', True)
         vote_str = 'Thank you for voting!'
         feedback_str = 'Thank you for your feedback!'
@@ -130,3 +108,9 @@ class TestFeedback(PatchRandomMixin, XBlockTestCase):
         # But it should not render for a new student
         self.select_student(1)
         self.check_response('feedback_1', False)
+
+    def set_random(self, random_patch_value):
+        '''
+        Override the random number in FeedbackXBlock
+        '''
+        feedback.feedback.FeedbackXBlock.debug_ranndom = random_patch_value

@@ -242,7 +242,7 @@ class FeedbackXBlock(XBlock):
         # empty HTML. There ought to be a way to return None, but XBlocks
         # doesn't support that.
         if self.p_user == -1:
-            self.p_user = random.uniform(0, 100)
+            self.p_user = self.random_percent()
         if self.p_user < self.p:
             frag = Fragment(rendered)
         else:
@@ -393,3 +393,14 @@ class FeedbackXBlock(XBlock):
         else:
             # In workbench and similar settings, always return true
             return True
+
+    debug_random = None
+
+    def random_percent(self):
+        '''
+        A little helper method which helps with testability
+        '''
+        if not self.debug_random:
+            return random.uniform(0, 100)
+        else:
+            return self.debug_random
