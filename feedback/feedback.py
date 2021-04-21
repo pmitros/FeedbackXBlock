@@ -6,14 +6,17 @@ in the course.
 """
 
 import cgi
+import io
 import random
 import pkg_resources
 import six
 
 from xblock.core import XBlock
 from xblock.fields import Scope, Integer, String, List, Float
+from webob import Response
 from web_fragments.fragment import Fragment
 
+from feedback.utils import FeedbackCSVProcessor
 
 # We provide default text which is designed to elicit student thought. We'd
 # like instructors to customize this to something highly structured (not
@@ -157,8 +160,10 @@ class FeedbackXBlock(XBlock):
         # Staff see vote totals, so we have slightly different HTML here.
         if self.vote_aggregate and self.is_staff():
             scale_item = self.resource_string("static/html/staff_item.html")
+            export_url = self.runtime.handler_url(self, "csv_export_handler")
         else:
             scale_item = self.resource_string("static/html/scale_item.html")
+            export_url = None
         # The replace allows us to format the HTML nicely without getting
         # extra whitespace
         scale_item = scale_item.replace('\n', '')
@@ -236,7 +241,8 @@ class FeedbackXBlock(XBlock):
                                freeform_prompt=prompt['freeform'],
                                likert_prompt=prompt['likert'],
                                response=response,
-                               placeholder=prompt['placeholder'])
+                               placeholder=prompt['placeholder'],
+                               export_url=export_url)
 
         # We initialize self.p_user if not initialized -- this sets whether
         # or not we show it. From there, if it is less than odds of showing,
@@ -362,6 +368,24 @@ class FeedbackXBlock(XBlock):
             response['aggregate'] = self.vote_aggregate
 
         return response
+
+    @XBlock.handler
+    def csv_export_handler(self, request, suffix=''):  # pylint: disable=unused-argument
+        """
+        Endpoint that handles CSV downloads.
+        """
+        if not self.runtime.user_is_staff:
+            return Response('not allowed', status_code=403)
+
+        buf = io.StringIO()
+        FeedbackCSVProcessor(block_id=str(self.location),
+                             location=self.location,
+                             display_name=self.display_name,
+                             prompt=self.get_prompt()).write_file(buf)
+        resp = Response(buf.getvalue())
+        resp.content_type = 'text/csv'
+        resp.content_disposition = 'attachment; filename="%s.csv"' % self.location
+        return resp
 
     @staticmethod
     def workbench_scenarios():
