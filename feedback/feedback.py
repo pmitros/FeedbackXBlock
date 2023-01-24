@@ -5,7 +5,7 @@ course resources, and to think and synthesize about their experience
 in the course.
 """
 
-import cgi
+import html
 import random
 import pkg_resources
 import six
@@ -280,11 +280,11 @@ class FeedbackXBlock(XBlock):
         for item in ['freeform', 'likert', 'placeholder', 'icon_set']:
             item_submission = data.get(item, None)
             if item_submission and len(item_submission) > 0:
-                self.prompts[0][item] = cgi.escape(item_submission)
+                self.prompts[0][item] = html.escape(item_submission)
         for i in range(5):
             likert = data.get('likert{i}'.format(i=i), None)
             if likert and len(likert) > 0:
-                self.prompts[0]['scale_text'][i] = cgi.escape(likert)
+                self.prompts[0]['scale_text'][i] = html.escape(likert)
 
         return {'result': 'success'}
 
