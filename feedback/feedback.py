@@ -5,14 +5,15 @@ course resources, and to think and synthesize about their experience
 in the course.
 """
 
-import cgi
+import html
 import random
-
 import pkg_resources
+import six
 
 from xblock.core import XBlock
 from xblock.fields import Scope, Integer, String, List, Float
-from xblock.fragment import Fragment
+from web_fragments.fragment import Fragment
+
 
 # We provide default text which is designed to elicit student thought. We'd
 # like instructors to customize this to something highly structured (not
@@ -23,14 +24,15 @@ DEFAULT_DEFAULT = "Think about the material, and try to synthesize key " \
                   "lessons learned, as well as key gaps in our presentation."
 DEFAULT_PLACEHOLDER = "Take a little bit of time to reflect here. " \
                       "Research shows that a meaningful synthesis will help " \
-                      "you better understand and remember material from this" \
+                      "you better understand and remember material from this " \
                       "course."
 DEFAULT_ICON = "face"
 DEFAULT_SCALETEXT = ["Excellent", "Good", "Average", "Fair", "Poor"]
 
-ICON_SETS = {'face': u"😁😊😐😞😭",
+# Unicode alt faces are cute, but we do nulls instead for a11y.
+ICON_SETS = {'face': [""]*5,  # u"😁😊😐😞😭",
              'num': u"12345",
-             'midface': u"😞😐😊😐😞"}
+             'midface': [""]*5}  # u"😞😐😊😐😞"}
 
 
 @XBlock.needs('i18n')
@@ -221,8 +223,7 @@ class FeedbackXBlock(XBlock):
                 votes,
                 act_urls,
                 ina_urls,
-                sel_urls
-               )
+                sel_urls)
         )
         if self.user_vote != -1:
             _ = self.runtime.service(self, 'i18n').ugettext
@@ -264,9 +265,9 @@ class FeedbackXBlock(XBlock):
         prompt = self.get_prompt(0)
         for idx in range(len(prompt['scale_text'])):
             prompt['likert{i}'.format(i=idx)] = prompt['scale_text'][idx]
-        frag = Fragment(unicode(html_str).format(**prompt))
+        frag = Fragment(six.text_type(html_str).format(**prompt))
         js_str = self.resource_string("static/js/src/studio.js")
-        frag.add_javascript(unicode(js_str))
+        frag.add_javascript(six.text_type(js_str))
         frag.initialize_js('FeedbackBlock',
                            {'icon_set': prompt['icon_set']})
         return frag
@@ -276,20 +277,15 @@ class FeedbackXBlock(XBlock):
         """
         Called when submitting the form in Studio.
         """
-        print "Received: ", data
-        print "Old prompt: ", self.prompts[0]
         for item in ['freeform', 'likert', 'placeholder', 'icon_set']:
             item_submission = data.get(item, None)
             if item_submission and len(item_submission) > 0:
-                print "Setting", item
-                self.prompts[0][item] = cgi.escape(item_submission)
+                self.prompts[0][item] = html.escape(item_submission)
         for i in range(5):
             likert = data.get('likert{i}'.format(i=i), None)
             if likert and len(likert) > 0:
-                print "Setting", i
-                self.prompts[0]['scale_text'][i] = cgi.escape(likert)
+                self.prompts[0]['scale_text'][i] = html.escape(likert)
 
-        print "New prompt: ", self.prompts[0]
         return {'result': 'success'}
 
     def init_vote_aggregate(self):
@@ -309,7 +305,7 @@ class FeedbackXBlock(XBlock):
         """
         # prompt_choice is initialized by student view.
         # Ideally, we'd break this out into a function.
-        prompt = self.get_prompt(self.prompt_choice)
+        prompt = self.get_prompt(self.prompt_choice)  # noqa
 
         # Make sure we're initialized
         self.init_vote_aggregate()
