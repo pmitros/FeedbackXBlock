@@ -1,0 +1,397 @@
+# coding: utf-8
+"""
+This is an XBlock designed to allow people to provide feedback on our
+course resources, and to think and synthesize about their experience
+in the course.
+"""
+
+import html
+import random
+import pkg_resources
+import six
+
+from xblock.core import XBlock
+from xblock.fields import Scope, Integer, String, List, Float
+from web_fragments.fragment import Fragment
+
+
+# We provide default text which is designed to elicit student thought. We'd
+# like instructors to customize this to something highly structured (not
+# "What did you think?" and "How did you like it?".
+DEFAULT_FREEFORM = "What did you learn from this? What was missing?"
+DEFAULT_LIKERT = "How would you rate this as a learning experience?"
+DEFAULT_DEFAULT = "Think about the material, and try to synthesize key " \
+                  "lessons learned, as well as key gaps in our presentation."
+DEFAULT_PLACEHOLDER = "Take a little bit of time to reflect here. " \
+                      "Research shows that a meaningful synthesis will help " \
+                      "you better understand and remember material from this " \
+                      "course."
+DEFAULT_ICON = "face"
+DEFAULT_SCALETEXT = ["Excellent", "Good", "Average", "Fair", "Poor"]
+
+# Unicode alt faces are cute, but we do nulls instead for a11y.
+ICON_SETS = {'face': [""]*5,  # u"😁😊😐😞😭",
+             'num': u"12345",
+             'midface': [""]*5}  # u"😞😐😊😐😞"}
+
+
+@XBlock.needs('i18n')
+class FeedbackXBlock(XBlock):
+    """
+    This is an XBlock -- eventually, hopefully an aside -- which
+    allows you to feedback content in the course. We've wanted this for a
+    long time, but Dartmouth finally encourage me to start to build
+    this.
+    """
+    # This is a list of prompts. If we have multiple elements in the
+    # list, one will be chosen at random. This is currently not
+    # exposed in the UX. If the prompt is missing any portions, we
+    # will default to the ones in default_prompt.
+    prompts = List(
+        default=[
+            {'freeform': DEFAULT_FREEFORM,
+             'default_text': DEFAULT_DEFAULT,
+             'likert': DEFAULT_LIKERT,
+             'placeholder': DEFAULT_PLACEHOLDER,
+             'scale_text': DEFAULT_SCALETEXT,
+             'icon_set': DEFAULT_ICON}
+        ],
+        scope=Scope.settings,
+        help="Freeform user prompt",
+        xml_node=True
+    )
+
+    prompt_choice = Integer(
+        default=-1, scope=Scope.user_state,
+        help="Random number generated for p. -1 if uninitialized"
+    )
+
+    user_vote = Integer(
+        default=-1, scope=Scope.user_state,
+        help="How user voted. -1 if didn't vote"
+    )
+
+    # pylint: disable=invalid-name
+    p = Float(
+        default=100, scope=Scope.settings,
+        help="What percent of the time should this show?"
+    )
+
+    p_user = Float(
+        default=-1, scope=Scope.user_state,
+        help="Random number generated for p. -1 if uninitialized"
+    )
+
+    vote_aggregate = List(
+        default=None, scope=Scope.user_state_summary,
+        help="A list of user votes"
+    )
+
+    user_freeform = String(default="", scope=Scope.user_state,
+                           help="Feedback")
+
+    display_name = String(
+        display_name="Display Name",
+        default="Provide Feedback",
+        scopde=Scope.settings
+    )
+
+    @classmethod
+    def resource_string(cls, path):
+        """Handy helper for getting resources from our kit."""
+        data = pkg_resources.resource_string(__name__, path)
+        return data.decode("utf8")
+
+    def get_prompt(self, index=-1):
+        """
+        Return the current prompt dictionary, doing appropriate
+        randomization if necessary, and falling back to defaults when
+        necessary.
+        """
+        if index == -1:
+            index = self.prompt_choice
+
+        _ = self.runtime.service(self, 'i18n').ugettext
+        # This is the default prompt if something is not specified in the
+        # settings dictionary. Note that this is not the same as the default
+        # above. The default above is the prompt the instructor starts from
+        # in a tool like Studio. This is a fallback in case some JSON fields
+        # are left unpopulated (e.g. if someone manually tweaks the database,
+        # in case of OLX authoring, and similar). The examplar above is
+        # intended as a well-structured, coherent response. This is designed
+        # as generic, to work with any content as a safe fallback.
+        prompt = {
+            'freeform': _("Please reflect on this course material"),
+            'default_text': _("Please take time to meaningfully reflect "
+                              "on your experience with this course "
+                              "material."),
+            'likert': _("Please rate your overall experience"),
+            'scale_text': [_("Excellent"),
+                           _("Good"),
+                           _("Average"),
+                           _("Fair"),
+                           _("Poor")],
+            'icon_set': 'num',
+            'placeholder': "Please take a moment to thoughtfully reflect."
+        }
+
+        prompt.update(self.prompts[index])
+        return prompt
+
+    def student_view(self, context=None):
+        """
+        The primary view of the FeedbackXBlock, shown to students
+        when viewing courses.
+        """
+        # Figure out which prompt we show. We set self.prompt_choice to
+        # the index of the prompt. We set it if it is out of range (either
+        # uninitiailized, or incorrect due to changing list length). Then,
+        # we grab the prompt, prepopulated with defaults.
+        if self.prompt_choice < 0 or self.prompt_choice >= len(self.prompts):
+            self.prompt_choice = random.randint(0, len(self.prompts) - 1)
+        prompt = self.get_prompt()
+
+        # Now, we render the FeedbackXBlock.
+        html = self.resource_string("static/html/feedback.html")
+
+        # Staff see vote totals, so we have slightly different HTML here.
+        if self.vote_aggregate and self.is_staff():
+            scale_item = self.resource_string("static/html/staff_item.html")
+        else:
+            scale_item = self.resource_string("static/html/scale_item.html")
+        # The replace allows us to format the HTML nicely without getting
+        # extra whitespace
+        scale_item = scale_item.replace('\n', '')
+
+        # We have five Likert fields right now, but we'd like this to
+        # be dynamic
+        indexes = range(5)
+
+        # If the user voted before, we'd like to show that
+        active_vote = ["checked" if i == self.user_vote else ""
+                       for i in indexes]
+
+        # Confirm that we do have vote totals (this may be uninitialized
+        # otherwise). This should probably go into __init__ or similar.
+        self.init_vote_aggregate()
+        votes = self.vote_aggregate
+
+        # We grab the icons. This should move to a Filesystem field so
+        # instructors can upload new ones
+        def get_url(icon_type, i):
+            '''
+            Helper function to generate the URL for the icons shown in the
+            tool. Takes the type of icon (active, inactive, etc.) and
+            the number of the icon.
+
+            Note that some icon types may not be actively used in the
+            styling. For example, at the time of this writing, we do
+            selected through CSS, rather than by using those icons.
+            '''
+            templates = {'inactive': 'public/default_icons/i{set}{i}.png',
+                         'active': 'public/default_icons/a{set}{i}.png',
+                         'selected': 'public/default_icons/s{set}{i}.png'}
+            template = templates[icon_type]
+            icon_file = template.format(i=i, set=prompt['icon_set'])
+            return self.runtime.local_resource_url(self, icon_file)
+        ina_urls = [get_url('inactive', i) for i in range(1, 6)]
+        act_urls = [get_url('active', i) for i in range(1, 6)]
+        sel_urls = [get_url('selected', i) for i in range(1, 6)]
+
+        # Render the Likert scale (not the whole page)
+        scale = u"".join(
+            scale_item.format(scale_text=scale_text,
+                              unicode_icon=unicode_icon,
+                              idx=idx,
+                              active=active,
+                              vote_cnt=vote_cnt,
+                              ina_icon=ina_icon,
+                              act_icon=act_icon,
+                              sel_icon=sel_icon) for
+            (scale_text,
+             unicode_icon,
+             idx,
+             active,
+             vote_cnt,
+             act_icon,
+             ina_icon,
+             sel_icon) in
+            zip(prompt['scale_text'],
+                ICON_SETS[(prompt['icon_set'])],
+                indexes,
+                active_vote,
+                votes,
+                act_urls,
+                ina_urls,
+                sel_urls)
+        )
+        if self.user_vote != -1:
+            _ = self.runtime.service(self, 'i18n').ugettext
+            response = _("Thank you for voting!")
+        else:
+            response = ""
+        # Now, render the whole page
+        rendered = html.format(self=self,
+                               scale=scale,
+                               freeform_prompt=prompt['freeform'],
+                               likert_prompt=prompt['likert'],
+                               response=response,
+                               placeholder=prompt['placeholder'])
+
+        # We initialize self.p_user if not initialized -- this sets whether
+        # or not we show it. From there, if it is less than odds of showing,
+        # we set the fragment to the rendered XBlock. Otherwise, we return
+        # empty HTML. There ought to be a way to return None, but XBlocks
+        # doesn't support that.
+        if self.p_user == -1:
+            self.p_user = random.uniform(0, 100)
+        if self.p_user < self.p:
+            frag = Fragment(rendered)
+        else:
+            frag = Fragment(u"")
+
+        # Finally, we do the standard JS+CSS boilerplate. Honestly, XBlocks
+        # ought to have a sane default here.
+        frag.add_css(self.resource_string("static/css/feedback.css"))
+        frag.add_javascript(self.resource_string("static/js/src/feedback.js"))
+        frag.initialize_js('FeedbackXBlock')
+        return frag
+
+    def studio_view(self, context):
+        """
+        Create a fragment used to display the edit view in the Studio.
+        """
+        html_str = self.resource_string("static/html/studio_view.html")
+        prompt = self.get_prompt(0)
+        for idx in range(len(prompt['scale_text'])):
+            prompt['likert{i}'.format(i=idx)] = prompt['scale_text'][idx]
+        frag = Fragment(six.text_type(html_str).format(**prompt))
+        js_str = self.resource_string("static/js/src/studio.js")
+        frag.add_javascript(six.text_type(js_str))
+        frag.initialize_js('FeedbackBlock',
+                           {'icon_set': prompt['icon_set']})
+        return frag
+
+    @XBlock.json_handler
+    def studio_submit(self, data, suffix=''):
+        """
+        Called when submitting the form in Studio.
+        """
+        for item in ['freeform', 'likert', 'placeholder', 'icon_set']:
+            item_submission = data.get(item, None)
+            if item_submission and len(item_submission) > 0:
+                self.prompts[0][item] = html.escape(item_submission)
+        for i in range(5):
+            likert = data.get('likert{i}'.format(i=i), None)
+            if likert and len(likert) > 0:
+                self.prompts[0]['scale_text'][i] = html.escape(likert)
+
+        return {'result': 'success'}
+
+    def init_vote_aggregate(self):
+        '''
+        There are a lot of places we read the aggregate vote counts. We
+        start out with these uninitialized. This guarantees they are
+        initialized. We'd prefer to do it this way, rather than default
+        value, since we do plan to not force scale length to be 5 in the
+        future.
+        '''
+        if not self.vote_aggregate:
+            self.vote_aggregate = [0] * (len(self.get_prompt()['scale_text']))
+
+    def vote(self, data):
+        """
+        Handle voting
+        """
+        # prompt_choice is initialized by student view.
+        # Ideally, we'd break this out into a function.
+        prompt = self.get_prompt(self.prompt_choice)  # noqa
+
+        # Make sure we're initialized
+        self.init_vote_aggregate()
+
+        # Remove old vote if we voted before
+        if self.user_vote != -1:
+            self.vote_aggregate[self.user_vote] -= 1
+
+        self.user_vote = data['vote']
+        self.vote_aggregate[self.user_vote] += 1
+
+    @XBlock.json_handler
+    def feedback(self, data, suffix=''):
+        '''
+        Allow students to submit feedback, both numerical and
+        qualitative. We only update the specific type of feedback
+        submitted.
+
+        We return the current state. While this is not used by the
+        client code, it is helpful for testing. For staff users, we
+        also return the aggregate results.
+        '''
+        _ = self.runtime.service(self, 'i18n').ugettext
+
+        if 'freeform' not in data and 'vote' not in data:
+            response = {"success": False,
+                        "response": _("Please vote!")}
+            self.runtime.publish(self,
+                                 'edx.feedbackxblock.nothing_provided',
+                                 {})
+        if 'vote' in data:
+            response = {"success": True,
+                        "response": _("Thank you for voting!")}
+            self.runtime.publish(self,
+                                 'edx.feedbackxblock.likert_provided',
+                                 {'old_vote': self.user_vote,
+                                  'new_vote': data['vote']})
+            self.vote(data)
+        if 'freeform' in data:
+            response = {"success": True,
+                        "response": _("Thank you for your feedback!")}
+            self.runtime.publish(self,
+                                 'edx.feedbackxblock.freeform_provided',
+                                 {'old_freeform': self.user_freeform,
+                                  'new_freeform': data['freeform']})
+            self.user_freeform = data['freeform']
+
+        response.update({
+            "freeform": self.user_freeform,
+            "vote": self.user_vote
+        })
+
+        if self.is_staff():
+            response['aggregate'] = self.vote_aggregate
+
+        return response
+
+    @staticmethod
+    def workbench_scenarios():
+        """
+        A canned scenario for display in the workbench.
+
+        We have three blocks. One shows up all the time (for testing). The
+        other two show up 50% of the time.
+        """
+        return [
+            ("FeedbackXBlock",
+             """<vertical_demo>
+                <feedback p="100"/>
+                <feedback p="50"/>
+                <feedback p="50"/>
+                </vertical_demo>
+             """),
+        ]
+
+    def is_staff(self):
+        """
+        Return self.xmodule_runtime.user_is_staff if available
+
+        This is not a supported part of the XBlocks API in all
+        runtimes, and this is a workaround so something reasonable
+        happens in both workbench and edx-platform
+        """
+        if hasattr(self, "xmodule_runtime") and \
+           hasattr(self.xmodule_runtime, "user_is_staff"):
+            return self.xmodule_runtime.user_is_staff
+        else:
+            # In workbench and similar settings, always return true
+            return True

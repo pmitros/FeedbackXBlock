@@ -1,0 +1,115 @@
+/* CSS for FeedbackXBlock */
+
+/* Overall block. We limit width, and put a very faint
+   border around it. */
+.feedback_block {
+    max-width: 450px;
+    border-width: 1px;
+    border-style: solid;
+    border-color: rgba(0,0,0,0.1);
+    padding: 10px
+}
+
+/* Little thank you message div after people vote */
+.feedback_thank_you {
+    color: green;
+}
+
+/* Label for the freeform text input. We want a little
+   space between this and the Likert input.*/
+.feedback_block .feedback_header_div {
+    margin-top:1em;
+}
+
+/* Fieldset for the Likert radio buttons */
+.feedback_block .feedback_likert_field {
+    padding: 0px;
+    margin: 0px;
+}
+
+/* The div around everything with a radio button */
+.feedback_block .feedback_likert_rating {
+    cursor: pointer;
+    border-radius:5px;
+    display:inline-block;
+    text-align:center;
+    padding:0px 10px 0px 10px;
+}
+
+/* Hide checked icon */
+.feedback_icon_active { display:none; }
+.feedback_icon_inactive { display:inline-block; }
+
+/* But show it if we are checked... */
+.feedback_block input[type="radio"]:checked ~ .feedback_icon_active{
+    display: inline-block;
+}
+/* ... while hiding the unchecked icon */
+.feedback_block input[type="radio"]:checked ~ .feedback_icon_inactive{
+    display: none;
+}
+
+.feedback_icon {
+   border-style:solid;
+   border-width: 1px;
+   border-color: rgba(255,255,255,0);
+   padding:1px;
+   height:60px;
+}
+
+.feedback_block input[type="radio"]:focus ~ .feedback_icon {
+   border-color: #999999;
+}
+
+.feedback_block input[type="radio"]:hover ~ .feedback_icon {
+   border-color: #999999;
+}
+
+.feedback_block .feedback_likert_label {
+    cursor: pointer;
+}
+
+.feedback_block .feedback_freeform_input {
+    margin-bottom: 1em;
+}
+
+.feedback_block .feedback_freeform_area {
+    height:inherit;
+}
+
+.feedback_block .feedback_rating_active {
+    color: blue;
+    font-weight: bold;
+    background-color: blanchedalmond;
+}
+
+.feedback_block .feedback_radio {
+    opacity:0;
+    width:1px;
+    padding:0px;
+    margin:0px;
+    position:absolute;
+}
+
+.feedback_block .feedback_sr_text{
+    opacity:0;
+    width:1px;
+    height:1px;
+    padding:0px;
+    margin:0px;
+    position:absolute;
+    clip:rect(1px,1px,1px,1px);
+    left:-10000px;
+    overflow:hidden;
+}
+
+.feedback_block label{
+    display:inline;
+}
+
+.feedback_block .feedback_likert_field {
+    border-style:none;
+}
+.feedback_block .feedback_submit_feedback {
+    width:100%;
+}
